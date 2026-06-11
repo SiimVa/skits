@@ -97,6 +97,19 @@ def bbox_from_center(x: float, y: float, width_m: float, height_m: float):
     return (x - width_m/2, y - height_m/2, x + width_m/2, y + height_m/2)
 
 
+def bbox_from_corners(x1: float, y1: float, x2: float, y2: float):
+    return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+
+
+def transform_wgs84_point(lat: float, lon: float) -> tuple[float, float]:
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3301", always_xy=True)
+    return transformer.transform(lon, lat)
+
+
+def create_blank_image(width_px: int, height_px: int, color=(255, 255, 255, 255)) -> Image.Image:
+    return Image.new("RGBA", (int(width_px), int(height_px)), color)
+
+
 def wms_getmap_url(base_url: str, layer: str, bbox, width_px: int, height_px: int):
     # EPSG:3301 uses axis x,y in most Estonian WMS services; WMS 1.1.1 avoids axis order surprises.
     params = {
@@ -121,45 +134,58 @@ def fetch_map_image(url: str) -> Image.Image:
     return Image.open(io.BytesIO(r.content)).convert("RGBA")
 
 
-def add_grid(img: Image.Image, width_m: float, height_m: float, grid_m: float, label: str, attribution: str):
+def add_grid(
+    img: Image.Image,
+    width_m: float,
+    height_m: float,
+    grid_m: float,
+    label: str,
+    attribution: str,
+    show_grid: bool = True,
+    show_north: bool = True,
+    show_label: bool = True,
+    show_attribution: bool = True,
+    show_border: bool = True,
+):
     out = img.copy()
     draw = ImageDraw.Draw(out, "RGBA")
     w, h = out.size
-    # grid line step in pixels
-    step_x = w * grid_m / width_m
-    step_y = h * grid_m / height_m
-    # choose font
+    step_x = w * grid_m / width_m if width_m else w
+    step_y = h * grid_m / height_m if height_m else h
     try:
         font = ImageFont.truetype("DejaVuSans.ttf", max(12, int(min(w, h) / 45)))
         small = ImageFont.truetype("DejaVuSans.ttf", max(10, int(min(w, h) / 60)))
     except Exception:
         font = ImageFont.load_default()
         small = ImageFont.load_default()
-    # grid
-    x = 0.0
-    idx = 0
-    while x <= w + 0.5:
-        alpha = 155 if idx % 5 == 0 else 85
-        draw.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha), width=2 if idx % 5 == 0 else 1)
-        idx += 1
-        x += step_x
-    y = 0.0
-    idy = 0
-    while y <= h + 0.5:
-        alpha = 155 if idy % 5 == 0 else 85
-        draw.line([(0, y), (w, y)], fill=(0, 0, 0, alpha), width=2 if idy % 5 == 0 else 1)
-        idy += 1
-        y += step_y
-    # border and north arrow
-    draw.rectangle([(0, 0), (w-1, h-1)], outline=(0, 0, 0, 255), width=4)
-    draw.rectangle([(10, 10), (min(w-10, 900), 92)], fill=(255, 255, 255, 205))
-    draw.text((22, 18), label, fill=(0, 0, 0, 255), font=font)
-    draw.text((22, 55), f"Ruudustik: {grid_m:g} m | {attribution}", fill=(0, 0, 0, 255), font=small)
-    # north arrow
-    ax = w - 55
-    draw.line([(ax, 80), (ax, 25)], fill=(0, 0, 0, 255), width=5)
-    draw.polygon([(ax, 12), (ax-14, 40), (ax+14, 40)], fill=(0, 0, 0, 255))
-    draw.text((ax-8, 85), "N", fill=(0, 0, 0, 255), font=font)
+    if show_grid and width_m and height_m:
+        x = 0.0
+        idx = 0
+        while x <= w + 0.5:
+            alpha = 155 if idx % 5 == 0 else 85
+            draw.line([(x, 0), (x, h)], fill=(0, 0, 0, alpha), width=2 if idx % 5 == 0 else 1)
+            idx += 1
+            x += step_x
+        y = 0.0
+        idy = 0
+        while y <= h + 0.5:
+            alpha = 155 if idy % 5 == 0 else 85
+            draw.line([(0, y), (w, y)], fill=(0, 0, 0, alpha), width=2 if idy % 5 == 0 else 1)
+            idy += 1
+            y += step_y
+    if show_border:
+        draw.rectangle([(0, 0), (w - 1, h - 1)], outline=(0, 0, 0, 255), width=4)
+    if show_label or show_attribution:
+        draw.rectangle([(10, 10), (min(w - 10, 900), 92)], fill=(255, 255, 255, 205))
+    if show_label:
+        draw.text((22, 18), label, fill=(0, 0, 0, 255), font=font)
+    if show_attribution:
+        draw.text((22, 55), f"Ruudustik: {grid_m:g} m | {attribution}", fill=(0, 0, 0, 255), font=small)
+    if show_north:
+        ax = w - 55
+        draw.line([(ax, 80), (ax, 25)], fill=(0, 0, 0, 255), width=5)
+        draw.polygon([(ax, 12), (ax - 14, 40), (ax + 14, 40)], fill=(0, 0, 0, 255))
+        draw.text((ax - 8, 85), "N", fill=(0, 0, 0, 255), font=font)
     return out
 
 
@@ -173,7 +199,31 @@ st.title("Skitsiabi: Maa- ja Ruumiameti kaardi kopeerimine A4 skitsile")
 st.caption("Vali ala, skitsi mõõtkava ja seade; rakendus koostab mõõtkavalise ruudustikuga abipildi.")
 
 with st.sidebar:
-    st.header("1. Seade")
+    st.header("1. Ala")
+    coord_mode = st.radio("Sisesta ala kaks diagonaalnurka", ["L-EST97 X/Y", "WGS84 lat/lon"], horizontal=False)
+    if coord_mode == "L-EST97 X/Y":
+        x1 = st.number_input("X1 / ida (EPSG:3301)", value=657900.0, step=10.0)
+        y1 = st.number_input("Y1 / põhja (EPSG:3301)", value=6470200.0, step=10.0)
+        x2 = st.number_input("X2 / ida (EPSG:3301)", value=659000.0, step=10.0)
+        y2 = st.number_input("Y2 / põhja (EPSG:3301)", value=6471200.0, step=10.0)
+        area_w_m = abs(x2 - x1)
+        area_h_m = abs(y2 - y1)
+        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+        area_bbox = bbox_from_corners(x1, y1, x2, y2)
+    else:
+        lat1 = st.number_input("Laiuskraad 1", value=58.38, step=0.0001, format="%.6f")
+        lon1 = st.number_input("Pikkuskraad 1", value=26.72, step=0.0001, format="%.6f")
+        lat2 = st.number_input("Laiuskraad 2", value=58.40, step=0.0001, format="%.6f")
+        lon2 = st.number_input("Pikkuskraad 2", value=26.74, step=0.0001, format="%.6f")
+        x1, y1 = transform_wgs84_point(lat1, lon1)
+        x2, y2 = transform_wgs84_point(lat2, lon2)
+        area_w_m = abs(x2 - x1)
+        area_h_m = abs(y2 - y1)
+        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+        area_bbox = bbox_from_corners(x1, y1, x2, y2)
+        st.caption(f"Teisendatud L-EST97: X={center_x:.1f}, Y={center_y:.1f}")
+
+    st.header("2. Seade")
     devices = load_devices()
     mode = st.radio("Seadme valik", ["Vali andmebaasist", "Sisesta käsitsi"], horizontal=False)
     if mode == "Vali andmebaasist" and not devices.empty:
@@ -201,25 +251,27 @@ with st.sidebar:
     usable_ratio = st.slider("Kaardiala osa ekraanist", 0.50, 1.00, 0.82, 0.01,
                              help="Arvestab brauseri ribasid ja Streamliti kasutajaliidest. Täpseks tööks kontrolli joonlauaga.")
 
-    st.header("2. Ala ja mõõtkava")
-    area_w_m = st.number_input("Ala laius looduses (m)", 50, 5000, 1000, 50)
-    area_h_m = st.number_input("Ala kõrgus looduses (m)", 50, 5000, 1000, 50)
+    st.header("3. Skitsi elemendid")
+    selected_elements = st.multiselect(
+        "Vali, milliseid elemente soovid skitsil näha",
+        ["WMS kaart", "Ruudustik", "Põhjasuund", "Mõõtkava ja andmeallikas"],
+        default=["WMS kaart", "Ruudustik", "Põhjasuund", "Mõõtkava ja andmeallikas"],
+    )
+    show_wms = "WMS kaart" in selected_elements
+    show_grid = "Ruudustik" in selected_elements
+    show_north = "Põhjasuund" in selected_elements
+    show_labels = "Mõõtkava ja andmeallikas" in selected_elements
+
+    st.header("4. Skitsi mõõtkava")
     scale = st.selectbox("Skitsi mõõtkava", [1000, 2000, 5000, 7500, 10000, 15000, 20000, 25000, 50000], index=2,
                          format_func=lambda x: f"1 : {x:,}".replace(",", " "))
     grid_m = st.selectbox("Ruudustiku samm looduses", [10, 20, 25, 50, 100, 250, 500], index=3,
                           format_func=lambda x: f"{x} m")
 
-    st.header("3. Asukoht")
-    coord_mode = st.radio("Keskpunkt", ["L-EST97 X/Y", "WGS84 lat/lon"], horizontal=False)
-    if coord_mode == "L-EST97 X/Y":
-        center_x = st.number_input("X / ida (EPSG:3301)", value=658000.0, step=100.0)
-        center_y = st.number_input("Y / põhja (EPSG:3301)", value=6470000.0, step=100.0)
-    else:
-        lat = st.number_input("Laiuskraad", value=58.38, step=0.001, format="%.6f")
-        lon = st.number_input("Pikkuskraad", value=26.72, step=0.001, format="%.6f")
-        transformer = Transformer.from_crs("EPSG:4326", "EPSG:3301", always_xy=True)
-        center_x, center_y = transformer.transform(lon, lat)
-        st.caption(f"Teisendatud L-EST97: X={center_x:.1f}, Y={center_y:.1f}")
+    if area_w_m == 0 or area_h_m == 0:
+        st.warning("Palun sisesta kaks erinevat diagonaalinurka, et ala oleks mõõdetav.")
+        area_w_m = max(area_w_m, 1.0)
+        area_h_m = max(area_h_m, 1.0)
 
 st.subheader("Mõõtkava ja A4 sobivuse kontroll")
 col1, col2, col3 = st.columns(3)
@@ -236,41 +288,66 @@ with st.expander("Soovitatud mõõtkavad A4-le", expanded=True):
 st.subheader("Kaardi- ja ruudustikupildi loomine")
 map_col, settings_col = st.columns([2, 1])
 with settings_col:
-    service_name = st.selectbox("Maa- ja Ruumiameti WMS teenus", list(WMS_SERVICES.keys()))
-    base_url = WMS_SERVICES[service_name]
-    layers = []
-    try:
-        layers = get_wms_layers(base_url)
-    except Exception as e:
-        st.warning(f"Kihtide laadimine ebaõnnestus: {e}")
-    if layers:
-        selected_layer = st.selectbox("Kiht", layers, index=0)
-        layer_name = selected_layer.split(" — ")[0]
+    if show_wms:
+        service_name = st.selectbox("Maa- ja Ruumiameti WMS teenus", list(WMS_SERVICES.keys()))
+        base_url = WMS_SERVICES[service_name]
+        layers = []
+        try:
+            layers = get_wms_layers(base_url)
+        except Exception as e:
+            st.warning(f"Kihtide laadimine ebaõnnestus: {e}")
+        if layers:
+            selected_layer = st.selectbox("Kiht", layers, index=0)
+            layer_name = selected_layer.split(" — ")[0]
+        else:
+            layer_name = st.text_input("Kiht käsitsi", value="BAASKAART")
     else:
-        layer_name = st.text_input("Kiht käsitsi", value="BAASKAART")
-    max_px = st.slider("Loodava pildi laius px", 600, 2200, 1200, 100)
+        st.info("WMS kaart pole valitud. Loome ainult skitsi tausta ja ruudustiku.")
+        base_url = None
+        layer_name = None
 
+    max_px = st.slider("Loodava pildi laius px", 600, 2200, 1200, 100)
     px_per_mm = screen_w_px / screen_w_mm
     display_w_mm = screen_w_mm * usable_ratio
     display_h_mm = screen_h_mm * usable_ratio
     st.caption(f"Valitud seadme järgi: {px_per_mm:.2f} px/mm; hinnanguline kasutatav kaardiala {display_w_mm:.0f} × {display_h_mm:.0f} mm.")
 
-bbox = bbox_from_center(center_x, center_y, area_w_m, area_h_m)
+bbox = area_bbox
 img_w = int(max_px)
-img_h = max(200, int(img_w * area_h_m / area_w_m))
+img_h = max(200, int(img_w * area_h_m / area_w_m)) if area_w_m else max(200, img_w)
 label = f"Ala {area_w_m:g} × {area_h_m:g} m | skits 1 : {scale:,}".replace(",", " ")
-attribution = f"Aluskaart: Maa- ja Ruumiamet, väljavõte {datetime.now().strftime('%d.%m.%Y')}"
+attribution = (
+    f"Aluskaart: Maa- ja Ruumiamet, väljavõte {datetime.now().strftime('%d.%m.%Y')}"
+    if show_wms else
+    "Skits: kasutaja valitud ala"
+)
 
 with map_col:
-    if st.button("Loo ruudustikuga kaardipilt", type="primary"):
+    if st.button("Loo skits", type="primary"):
         try:
-            url = wms_getmap_url(base_url, layer_name, bbox, img_w, img_h)
-            img = fetch_map_image(url)
-            gridded = add_grid(img, area_w_m, area_h_m, grid_m, label, attribution)
-            st.session_state["gridded"] = gridded
-            st.session_state["wms_url"] = url
+            if show_wms and base_url and layer_name:
+                url = wms_getmap_url(base_url, layer_name, bbox, img_w, img_h)
+                img = fetch_map_image(url)
+                st.session_state["wms_url"] = url
+            else:
+                img = create_blank_image(img_w, img_h)
+                st.session_state["wms_url"] = ""
+
+            final_img = add_grid(
+                img,
+                area_w_m,
+                area_h_m,
+                grid_m,
+                label,
+                attribution,
+                show_grid=show_grid,
+                show_north=show_north,
+                show_label=show_labels,
+                show_attribution=show_labels,
+            )
+            st.session_state["gridded"] = final_img
         except Exception as e:
-            st.error(f"Kaardipildi loomine ebaõnnestus: {e}")
+            st.error(f"Skitsi loomine ebaõnnestus: {e}")
 
     if "gridded" in st.session_state:
         st.image(st.session_state["gridded"], caption=label, use_container_width=True)
@@ -280,8 +357,9 @@ with map_col:
             file_name="skitsiabi_ruudustik.png",
             mime="image/png",
         )
-        with st.expander("WMS päringu URL"):
-            st.code(st.session_state.get("wms_url", ""), language="text")
+        if st.session_state.get("wms_url"):
+            with st.expander("WMS päringu URL"):
+                st.code(st.session_state.get("wms_url", ""), language="text")
 
 st.subheader("Kuidas seda telefonilt paberile kanda")
 st.markdown(f"""

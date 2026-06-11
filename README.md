@@ -19,9 +19,10 @@ See projekt loob abivahendi, mis aitab koostada Maa- ja Ruumiameti WMS-kaartide 
 
 ## Kuidas kasutada
 
+- Sisesta ala kaks diagonaalnurka: kas L-EST97 X/Y või WGS84 lat/lon.
+- Vali, milliseid elemente soovid skitsil näha: WMS kaart, ruudustik, põhjasuund ja mõõtkava.
 - Valida seade `devices.csv` andmebaasist või sisestada ekraani mõõtmed käsitsi.
-- Määrata kaardiala mõõtmed ja soovitud skitsi mõõtkava.
-- Valida WMS-teenus ja kiht ning luua ruudustikuga kaardipilt.
+- Määrata soovitud skitsi mõõtkava ja ruudustiku samm.
 - Laadida loodud PNG alla ning kasutada skitsina paberkandjal.
 
 ## Failid
