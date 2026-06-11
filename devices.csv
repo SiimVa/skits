@@ -1,0 +1,13 @@
+brand,model,width_mm,height_mm,width_px,height_px,notes
+iPhone,iPhone 12 / 13 / 14,64.2,139.5,1170,2532,6.1 inch OLED; physical active display approximate
+iPhone,iPhone 15 / 16,64.2,139.5,1179,2556,6.1 inch OLED; physical active display approximate
+iPhone,iPhone 15 Pro / 16 Pro,64.2,139.5,1179,2556,6.1 inch OLED; physical active display approximate
+iPhone,iPhone 15 Plus / 16 Plus,71.5,155.2,1290,2796,6.7 inch OLED; physical active display approximate
+iPhone,iPhone 15 Pro Max / 16 Pro Max,71.5,155.2,1290,2796,6.7 inch OLED; physical active display approximate
+iPad,iPad 10.2,162.0,216.0,1620,2160,10.2 inch tablet
+iPad,iPad Air 10.9 / 11,164.0,236.0,1640,2360,approx active display
+Samsung,Galaxy S23 / S24,64.0,142.0,1080,2340,approx active display
+Samsung,Galaxy S23 Ultra / S24 Ultra,73.0,163.0,1440,3088,approx active display
+Google,Pixel 7 / 8,65.0,145.0,1080,2400,approx active display
+Google,Pixel 8 Pro,70.0,156.0,1344,2992,approx active display
+Generic,A4 print / PDF target,210.0,297.0,2480,3508,300 dpi A4 portrait virtual target
