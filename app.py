@@ -3,6 +3,7 @@ import math
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 from urllib.parse import urlencode
 
 import pandas as pd
@@ -158,7 +159,7 @@ def add_grid(
     grid_m: float,
     label: str,
     attribution: str,
-    terrain_elements: list[str] | None = None,
+    terrain_elements: Optional[list[str]] = None,
     show_grid: bool = True,
     show_north: bool = True,
     show_label: bool = True,
