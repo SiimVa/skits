@@ -322,7 +322,7 @@ with st.sidebar:
     selected_terrain_elements = st.multiselect(
         "Vali olulisemad maastiku elemendid",
         ["Teed", "Sihid", "Jõed", "Kraavid", "Majad", "Sild", "Piirid", "Tiigid", "Metsad"],
-        default=["Teed", "Sihid", "Jõed", "Kraavid"],
+        default=["Teed", "Sihid", "Jõed", "Kraavid", "Majad", "Tiigid", "Metsad"],
     )
     show_wms = "WMS kaart" in selected_display_elements
     show_grid = "Ruudustik" in selected_display_elements
