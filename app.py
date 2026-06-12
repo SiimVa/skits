@@ -10,6 +10,17 @@ import requests
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont
 from pyproj import Transformer
+import mgrs
+
+from scale_conversion import (
+    DEFAULT_MAP_SCALE,
+    DEFAULT_SKETCH_SCALE,
+    MAP_SCALE_OPTIONS,
+    SKETCH_SCALE_OPTIONS,
+    convert_mm_to_sketch,
+    format_scale_label,
+    resolve_scale,
+)
 
 st.set_page_config(page_title="Skitsiabi", layout="wide")
 
@@ -101,6 +112,12 @@ def bbox_from_corners(x1: float, y1: float, x2: float, y2: float):
     return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
 
 
+def mgrs_to_latlon(mgrs_code: str) -> tuple[float, float]:
+    converter = mgrs.MGRS()
+    lat, lon = converter.toLatLon(mgrs_code.strip())
+    return float(lat), float(lon)
+
+
 def transform_wgs84_point(lat: float, lon: float) -> tuple[float, float]:
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:3301", always_xy=True)
     return transformer.transform(lon, lat)
@@ -141,6 +158,7 @@ def add_grid(
     grid_m: float,
     label: str,
     attribution: str,
+    terrain_elements: list[str] | None = None,
     show_grid: bool = True,
     show_north: bool = True,
     show_label: bool = True,
@@ -175,12 +193,15 @@ def add_grid(
             y += step_y
     if show_border:
         draw.rectangle([(0, 0), (w - 1, h - 1)], outline=(0, 0, 0, 255), width=4)
-    if show_label or show_attribution:
-        draw.rectangle([(10, 10), (min(w - 10, 900), 92)], fill=(255, 255, 255, 205))
+    if show_label or show_attribution or terrain_elements:
+        draw.rectangle([(10, 10), (min(w - 10, 900), 110)], fill=(255, 255, 255, 205))
     if show_label:
         draw.text((22, 18), label, fill=(0, 0, 0, 255), font=font)
     if show_attribution:
-        draw.text((22, 55), f"Ruudustik: {grid_m:g} m | {attribution}", fill=(0, 0, 0, 255), font=small)
+        draw.text((22, 45), f"Ruudustik: {grid_m:g} m | {attribution}", fill=(0, 0, 0, 255), font=small)
+    if terrain_elements:
+        terrain_text = ", ".join(terrain_elements)
+        draw.text((22, 68), f"Elemendid: {terrain_text}", fill=(0, 0, 0, 255), font=small)
     if show_north:
         ax = w - 55
         draw.line([(ax, 80), (ax, 25)], fill=(0, 0, 0, 255), width=5)
@@ -200,21 +221,16 @@ st.caption("Vali ala, skitsi mõõtkava ja seade; rakendus koostab mõõtkavalis
 
 with st.sidebar:
     st.header("1. Ala")
-    coord_mode = st.radio("Sisesta ala kaks diagonaalnurka", ["L-EST97 X/Y", "WGS84 lat/lon"], horizontal=False)
-    if coord_mode == "L-EST97 X/Y":
-        x1 = st.number_input("X1 / ida (EPSG:3301)", value=657900.0, step=10.0)
-        y1 = st.number_input("Y1 / põhja (EPSG:3301)", value=6470200.0, step=10.0)
-        x2 = st.number_input("X2 / ida (EPSG:3301)", value=659000.0, step=10.0)
-        y2 = st.number_input("Y2 / põhja (EPSG:3301)", value=6471200.0, step=10.0)
-        area_w_m = abs(x2 - x1)
-        area_h_m = abs(y2 - y1)
-        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
-        area_bbox = bbox_from_corners(x1, y1, x2, y2)
-    else:
-        lat1 = st.number_input("Laiuskraad 1", value=58.38, step=0.0001, format="%.6f")
-        lon1 = st.number_input("Pikkuskraad 1", value=26.72, step=0.0001, format="%.6f")
-        lat2 = st.number_input("Laiuskraad 2", value=58.40, step=0.0001, format="%.6f")
-        lon2 = st.number_input("Pikkuskraad 2", value=26.74, step=0.0001, format="%.6f")
+    st.markdown("Sisesta ala kaks diagonaalnurka MGRS-formaadis.")
+    mgrs1 = st.text_input("MGRS nurk 1", value="35VLL2445309927")
+    mgrs2 = st.text_input("MGRS nurk 2", value="35VLL3192511098")
+    x1 = y1 = x2 = y2 = 0.0
+    area_bbox = (0.0, 0.0, 0.0, 0.0)
+    area_w_m = area_h_m = 0.0
+    center_x = center_y = 0.0
+    try:
+        lat1, lon1 = mgrs_to_latlon(mgrs1)
+        lat2, lon2 = mgrs_to_latlon(mgrs2)
         x1, y1 = transform_wgs84_point(lat1, lon1)
         x2, y2 = transform_wgs84_point(lat2, lon2)
         area_w_m = abs(x2 - x1)
@@ -222,6 +238,9 @@ with st.sidebar:
         center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
         area_bbox = bbox_from_corners(x1, y1, x2, y2)
         st.caption(f"Teisendatud L-EST97: X={center_x:.1f}, Y={center_y:.1f}")
+    except Exception as e:
+        st.warning(f"MGRS teisendus ebaõnnestus: {e}")
+        st.info("Sisesta kehtivad kaks MGRS-koodi, näiteks 35VLL2445309927 ja 35VLL3192511098.")
 
     st.header("2. Seade")
     devices = load_devices()
@@ -252,24 +271,58 @@ with st.sidebar:
                              help="Arvestab brauseri ribasid ja Streamliti kasutajaliidest. Täpseks tööks kontrolli joonlauaga.")
 
     st.header("3. Skitsi elemendid")
-    selected_elements = st.multiselect(
+    selected_display_elements = st.multiselect(
         "Vali, milliseid elemente soovid skitsil näha",
         ["WMS kaart", "Ruudustik", "Põhjasuund", "Mõõtkava ja andmeallikas"],
         default=["WMS kaart", "Ruudustik", "Põhjasuund", "Mõõtkava ja andmeallikas"],
     )
-    show_wms = "WMS kaart" in selected_elements
-    show_grid = "Ruudustik" in selected_elements
-    show_north = "Põhjasuund" in selected_elements
-    show_labels = "Mõõtkava ja andmeallikas" in selected_elements
+    selected_terrain_elements = st.multiselect(
+        "Vali olulisemad maastiku elemendid",
+        ["Teed", "Sihid", "Jõed", "Kraavid", "Majad", "Sild", "Piirid", "Tiigid", "Metsad"],
+        default=["Teed", "Sihid", "Jõed", "Kraavid"],
+    )
+    show_wms = "WMS kaart" in selected_display_elements
+    show_grid = "Ruudustik" in selected_display_elements
+    show_north = "Põhjasuund" in selected_display_elements
+    show_labels = "Mõõtkava ja andmeallikas" in selected_display_elements
 
-    st.header("4. Skitsi mõõtkava")
-    scale = st.selectbox("Skitsi mõõtkava", [1000, 2000, 5000, 7500, 10000, 15000, 20000, 25000, 50000], index=2,
-                         format_func=lambda x: f"1 : {x:,}".replace(",", " "))
+    st.header("4. Mõõtkava konverteerimine")
+    map_scale_choice = st.selectbox(
+        "Mõõtkava, millel kaarti loed",
+        MAP_SCALE_OPTIONS + ["Kohandatud..."],
+        index=0,
+        format_func=format_scale_label,
+    )
+    if map_scale_choice == "Kohandatud...":
+        custom_map_scale = st.number_input("Sisesta oma kaardi mõõtkava 1:N", min_value=100, value=DEFAULT_MAP_SCALE, step=100)
+        map_scale = resolve_scale(map_scale_choice, custom_map_scale)
+    else:
+        map_scale = resolve_scale(map_scale_choice, DEFAULT_MAP_SCALE)
+
+    sketch_scale_choice = st.selectbox(
+        "Mõõtkava, milles skitsi joonistad",
+        SKETCH_SCALE_OPTIONS + ["Kohandatud..."],
+        index=0,
+        format_func=format_scale_label,
+    )
+    if sketch_scale_choice == "Kohandatud...":
+        custom_sketch_scale = st.number_input("Sisesta oma skitsi mõõtkava 1:N", min_value=100, value=DEFAULT_SKETCH_SCALE, step=100)
+        sketch_scale = resolve_scale(sketch_scale_choice, custom_sketch_scale)
+    else:
+        sketch_scale = resolve_scale(sketch_scale_choice, DEFAULT_SKETCH_SCALE)
+
+    measured_mm = st.number_input("Kui mitu mm sa kaardilt mõõtsid?", min_value=0.0, value=10.0, step=0.1)
+    sketch_mm = convert_mm_to_sketch(measured_mm, map_scale, sketch_scale)
+
+    st.metric("Skitsil mõõt", f"{sketch_mm:.2f} mm")
+    st.caption(f"Kaardi mõõtkava: 1:{map_scale}, Skitsi mõõtkava: 1:{sketch_scale}")
+
+    scale = sketch_scale
     grid_m = st.selectbox("Ruudustiku samm looduses", [10, 20, 25, 50, 100, 250, 500], index=3,
                           format_func=lambda x: f"{x} m")
 
     if area_w_m == 0 or area_h_m == 0:
-        st.warning("Palun sisesta kaks erinevat diagonaalinurka, et ala oleks mõõdetav.")
+        st.warning("Palun sisesta kaks erinevat MGRS-nurka, et ala oleks mõõdetav.")
         area_w_m = max(area_w_m, 1.0)
         area_h_m = max(area_h_m, 1.0)
 
@@ -340,6 +393,7 @@ with map_col:
                 grid_m,
                 label,
                 attribution,
+                terrain_elements=selected_terrain_elements,
                 show_grid=show_grid,
                 show_north=show_north,
                 show_label=show_labels,

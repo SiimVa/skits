@@ -3,3 +3,4 @@ pandas
 requests
 Pillow
 pyproj
+mgrs
