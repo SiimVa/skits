@@ -194,15 +194,57 @@ def add_grid(
             y += step_y
     if show_border:
         draw.rectangle([(0, 0), (w - 1, h - 1)], outline=(0, 0, 0, 255), width=4)
+
+    legend_styles = {
+        "Teed": {"type": "line", "color": (0, 0, 0, 255), "width": 4, "dash": None},
+        "Sihid": {"type": "line", "color": (0, 0, 0, 255), "width": 2, "dash": [8, 5]},
+        "Jõed": {"type": "line", "color": (30, 100, 220, 255), "width": 4, "dash": None},
+        "Kraavid": {"type": "line", "color": (0, 70, 160, 255), "width": 3, "dash": [4, 4]},
+        "Majad": {"type": "box", "color": (120, 120, 120, 255)},
+        "Sild": {"type": "circle", "color": (255, 200, 0, 255)},
+        "Piirid": {"type": "line", "color": (200, 0, 0, 255), "width": 3, "dash": None},
+        "Tiigid": {"type": "box", "color": (180, 220, 255, 180)},
+        "Metsad": {"type": "box", "color": (170, 210, 130, 180)},
+    }
+
+    legend_items = [item for item in (terrain_elements or []) if item in legend_styles]
+    panel_height = 110 + len(legend_items) * 18 if legend_items else 110
     if show_label or show_attribution or terrain_elements:
-        draw.rectangle([(10, 10), (min(w - 10, 900), 110)], fill=(255, 255, 255, 205))
+        draw.rectangle([(10, 10), (min(w - 10, 900), panel_height)], fill=(255, 255, 255, 220))
+    y_offset = 18
     if show_label:
         draw.text((22, 18), label, fill=(0, 0, 0, 255), font=font)
+        y_offset += 24
     if show_attribution:
-        draw.text((22, 45), f"Ruudustik: {grid_m:g} m | {attribution}", fill=(0, 0, 0, 255), font=small)
+        draw.text((22, y_offset), f"Ruudustik: {grid_m:g} m | {attribution}", fill=(0, 0, 0, 255), font=small)
+        y_offset += 20
     if terrain_elements:
         terrain_text = ", ".join(terrain_elements)
-        draw.text((22, 68), f"Elemendid: {terrain_text}", fill=(0, 0, 0, 255), font=small)
+        draw.text((22, y_offset), f"Elemendid: {terrain_text}", fill=(0, 0, 0, 255), font=small)
+        y_offset += 22
+
+    if legend_items:
+        draw.text((22, y_offset), "Legend:", fill=(0, 0, 0, 255), font=small)
+        y_offset += 18
+        icon_x = 26
+        for item in legend_items:
+            style = legend_styles[item]
+            text_x = icon_x + 30
+            if style["type"] == "line":
+                draw.line([(icon_x, y_offset + 6), (icon_x + 24, y_offset + 6)], fill=style["color"], width=style["width"])
+                if style["dash"]:
+                    dash = style["dash"]
+                    for i in range(icon_x, icon_x + 24, sum(dash)):
+                        start = i
+                        end = min(i + dash[0], icon_x + 24)
+                        draw.line([(start, y_offset + 6), (end, y_offset + 6)], fill=style["color"], width=style["width"])
+            elif style["type"] == "box":
+                draw.rectangle([(icon_x, y_offset + 2), (icon_x + 18, y_offset + 18)], fill=style["color"], outline=(0, 0, 0, 255) if item != "Tiigid" else None)
+            elif style["type"] == "circle":
+                draw.ellipse([(icon_x, y_offset + 2), (icon_x + 18, y_offset + 18)], fill=style["color"], outline=(0, 0, 0, 255))
+            draw.text((text_x, y_offset), item, fill=(0, 0, 0, 255), font=small)
+            y_offset += 18
+
     if show_north:
         ax = w - 55
         draw.line([(ax, 80), (ax, 25)], fill=(0, 0, 0, 255), width=5)
