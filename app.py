@@ -35,6 +35,7 @@ WMS_SERVICES = {
 
 A4_LANDSCAPE_USABLE_CM = (25.0, 17.0)
 A4_PORTRAIT_USABLE_CM = (17.0, 25.0)
+MAX_WMS_DIMENSION = 4096
 
 @dataclass
 class Device:
@@ -111,6 +112,21 @@ def bbox_from_center(x: float, y: float, width_m: float, height_m: float):
 
 def bbox_from_corners(x1: float, y1: float, x2: float, y2: float):
     return (min(x1, x2), min(y1, y2), max(x1, x2), max(y1, y2))
+
+
+def normalize_wms_layer_name(selected_layer: str) -> str:
+    if " — " in selected_layer:
+        return selected_layer.split(" — ")[0].strip()
+    return selected_layer.strip()
+
+
+def clamp_image_dimensions(width: int, height: int, max_dimension: int = MAX_WMS_DIMENSION) -> tuple[int, int]:
+    width = max(1, int(width))
+    height = max(1, int(height))
+    if width <= max_dimension and height <= max_dimension:
+        return width, height
+    scale = min(max_dimension / width, max_dimension / height)
+    return max(1, int(width * scale)), max(1, int(height * scale))
 
 
 def mgrs_to_latlon(mgrs_code: str) -> tuple[float, float]:
@@ -414,9 +430,10 @@ with settings_col:
             st.warning(f"Kihtide laadimine ebaõnnestus: {e}")
         if layers:
             selected_layer = st.selectbox("Kiht", layers, index=0)
-            layer_name = selected_layer.split(" — ")[0]
+            layer_name = normalize_wms_layer_name(selected_layer)
         else:
-            layer_name = st.text_input("Kiht käsitsi", value="BAASKAART")
+            fallback_layer = "BAASKAART" if "/alus" in base_url else ""
+            layer_name = st.text_input("Kiht käsitsi", value=fallback_layer)
     else:
         st.info("WMS kaart pole valitud. Loome ainult skitsi tausta ja ruudustiku.")
         base_url = None
@@ -431,6 +448,7 @@ with settings_col:
 bbox = area_bbox
 img_w = int(max_px)
 img_h = max(200, int(img_w * area_h_m / area_w_m)) if area_w_m else max(200, img_w)
+img_w, img_h = clamp_image_dimensions(img_w, img_h)
 label = f"Ala {area_w_m:g} × {area_h_m:g} m | skits 1 : {scale:,}".replace(",", " ")
 attribution = (
     f"Aluskaart: Maa- ja Ruumiamet, väljavõte {datetime.now().strftime('%d.%m.%Y')}"
