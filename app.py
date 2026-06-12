@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 import pandas as pd
 import requests
 import streamlit as st
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, UnidentifiedImageError
 from pyproj import Transformer
 import mgrs
 
@@ -146,10 +146,30 @@ def wms_getmap_url(base_url: str, layer: str, bbox, width_px: int, height_px: in
     return base_url + "?" + urlencode(params)
 
 
+def is_bbox_valid(bbox) -> bool:
+    if not bbox or len(bbox) != 4:
+        return False
+    x1, y1, x2, y2 = bbox
+    return x2 > x1 and y2 > y1
+
+
 def fetch_map_image(url: str) -> Image.Image:
     r = requests.get(url, timeout=30)
     r.raise_for_status()
-    return Image.open(io.BytesIO(r.content)).convert("RGBA")
+    content_type = r.headers.get("Content-Type", "")
+    if "image" not in content_type.lower():
+        preview = r.text[:500].strip().replace("\n", " ")
+        raise ValueError(
+            f"WMS response was not an image: Content-Type={content_type}. "
+            f"Server response: {preview!r}"
+        )
+    try:
+        return Image.open(io.BytesIO(r.content)).convert("RGBA")
+    except UnidentifiedImageError as exc:
+        raise ValueError(
+            f"WMS response could not be opened as an image. "
+            f"Content-Type={content_type}, bytes={len(r.content)}"
+        ) from exc
 
 
 def add_grid(
@@ -421,6 +441,11 @@ attribution = (
 with map_col:
     if st.button("Loo skits", type="primary"):
         try:
+            if not is_bbox_valid(bbox):
+                raise ValueError(
+                    "Ala ei ole kehtiv. Kontrolli MGRS-koodi ja sisesta kaks erinevat nurka."
+                )
+
             if show_wms and base_url and layer_name:
                 url = wms_getmap_url(base_url, layer_name, bbox, img_w, img_h)
                 img = fetch_map_image(url)
